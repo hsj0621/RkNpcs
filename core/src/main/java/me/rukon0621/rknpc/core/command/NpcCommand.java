@@ -60,12 +60,6 @@ public final class NpcCommand implements BasicCommand {
         }
         String sub = args[0].toLowerCase(Locale.ROOT);
         if ((sub.equals("remove") || sub.equals("visibility") || sub.equals("item") || sub.equals("skin") || sub.equals("look") || sub.equals("name") || sub.equals("displayname")) && args.length == 2) {
-            if (sub.equals("skin")) {
-                List<String> values = new ArrayList<>(npcIds());
-                values.add("download");
-                values.add("copy");
-                return filter(values, args[1]);
-            }
             return filter(npcIds(), args[1]);
         }
         if (sub.equals("visibility") && args.length == 3) {
@@ -78,18 +72,15 @@ public final class NpcCommand implements BasicCommand {
             return filter(List.of("hand", "offhand", "helmet", "chestplate", "leggings", "boots"), args[2]);
         }
         if (sub.equals("skin") && args.length == 3) {
-            if (args[1].equalsIgnoreCase("download") || args[1].equalsIgnoreCase("copy")) {
-                return filter(npcIds(), args[2]);
-            }
-            return filter(List.of("name", "url", "image", "mirror"), args[2]);
+            return filter(List.of("name", "url", "image", "mirror", "download", "copy"), args[2]);
         }
-        if (sub.equals("skin") && args.length == 4 && args[1].equalsIgnoreCase("copy")) {
+        if (sub.equals("skin") && args.length == 4 && args[2].equalsIgnoreCase("copy")) {
             return filter(npcIds(), args[3]);
         }
-        if (sub.equals("skin") && args.length == 4 && args[1].equalsIgnoreCase("download")) {
+        if (sub.equals("skin") && args.length == 4 && args[2].equalsIgnoreCase("download")) {
             return filter(List.of("skin.png"), args[3]);
         }
-        if (sub.equals("skin") && args.length == 5 && args[1].equalsIgnoreCase("download")) {
+        if (sub.equals("skin") && args.length == 5 && args[2].equalsIgnoreCase("download")) {
             return filter(List.of("https://"), args[4]);
         }
         if (sub.equals("look") && args.length == 3) {
@@ -177,16 +168,16 @@ public final class NpcCommand implements BasicCommand {
     }
 
     private void skin(CommandSender sender, String[] args) {
-        if (args.length >= 2 && args[1].equalsIgnoreCase("download")) {
+        if (args.length < 3) {
+            skinHelp(sender);
+            return;
+        }
+        if (args[2].equalsIgnoreCase("download")) {
             skinDownload(sender, args);
             return;
         }
-        if (args.length >= 2 && args[1].equalsIgnoreCase("copy")) {
+        if (args[2].equalsIgnoreCase("copy")) {
             skinCopy(sender, args);
-            return;
-        }
-        if (args.length < 3) {
-            skinHelp(sender);
             return;
         }
         NpcSkinType type;
@@ -207,12 +198,12 @@ public final class NpcCommand implements BasicCommand {
 
     private void skinDownload(CommandSender sender, String[] args) {
         if (args.length < 5) {
-            send(sender, "/npc skin download <npc> <파일이름.png> <링크>");
+            send(sender, "/npc skin <npc> download <파일이름.png> <링크>");
             return;
         }
         String url = String.join(" ", Arrays.copyOfRange(args, 4, args.length));
         send(sender, "스킨 이미지를 다운로드합니다.");
-        npcManager.downloadAndApplySkin(args[2], args[3], url).thenAccept(result ->
+        npcManager.downloadAndApplySkin(args[1], args[3], url).thenAccept(result ->
                 npcManager.runGlobal(() -> send(sender, switch (result) {
                     case SUCCESS -> "스킨 이미지를 다운로드하고 NPC에 적용했습니다.";
                     case NPC_NOT_FOUND -> "NPC를 찾을 수 없습니다.";
@@ -226,10 +217,10 @@ public final class NpcCommand implements BasicCommand {
 
     private void skinCopy(CommandSender sender, String[] args) {
         if (args.length < 4) {
-            send(sender, "/npc skin copy <npc> <sourcenpc>");
+            send(sender, "/npc skin <npc> copy <sourcenpc>");
             return;
         }
-        var target = npcManager.getNpc(args[2]);
+        var target = npcManager.getNpc(args[1]);
         if (target.isEmpty()) {
             send(sender, "대상 NPC를 찾을 수 없습니다.");
             return;
@@ -240,7 +231,7 @@ public final class NpcCommand implements BasicCommand {
             return;
         }
         NpcSkin sourceSkin = source.get().skin();
-        npcManager.setSkin(args[2], new NpcSkin(sourceSkin.type(), sourceSkin.value()));
+        npcManager.setSkin(args[1], new NpcSkin(sourceSkin.type(), sourceSkin.value()));
         send(sender, "NPC 스킨을 복사했습니다.");
     }
 
@@ -286,8 +277,8 @@ public final class NpcCommand implements BasicCommand {
         send(sender, "/npc visibility <id> <player> <show|hide|auto>");
         send(sender, "/npc item <id> <hand|offhand>");
         send(sender, "/npc skin <id> <name|url|image|mirror> <value>");
-        send(sender, "/npc skin download <npc> <파일이름.png> <링크>");
-        send(sender, "/npc skin copy <npc> <sourcenpc>");
+        send(sender, "/npc skin <npc> download <파일이름.png> <링크>");
+        send(sender, "/npc skin <npc> copy <sourcenpc>");
         send(sender, "/npc look <id> <target|off>");
         send(sender, "/npc name <id> <name>");
         send(sender, "/npc reload");
@@ -295,8 +286,8 @@ public final class NpcCommand implements BasicCommand {
 
     private void skinHelp(CommandSender sender) {
         send(sender, "/npc skin <id> <name|url|image|mirror> <value>");
-        send(sender, "/npc skin download <npc> <파일이름.png> <링크>");
-        send(sender, "/npc skin copy <npc> <sourcenpc>");
+        send(sender, "/npc skin <npc> download <파일이름.png> <링크>");
+        send(sender, "/npc skin <npc> copy <sourcenpc>");
     }
 
     private void send(CommandSender sender, String message) {
