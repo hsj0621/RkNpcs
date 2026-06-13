@@ -1,11 +1,13 @@
 package me.rukon0621.rknpc.core.command;
 
 import me.rukon0621.rknpc.api.npc.NpcCreateRequest;
+import me.rukon0621.rknpc.api.npc.NpcEquipmentSlot;
 import me.rukon0621.rknpc.api.npc.NpcLookMode;
 import me.rukon0621.rknpc.api.npc.NpcSkin;
 import me.rukon0621.rknpc.api.npc.NpcSkinType;
 import me.rukon0621.rknpc.core.gui.NpcItemGui;
 import me.rukon0621.rknpc.core.manager.CoreNpcManager;
+import me.rukon0621.rknpc.core.model.CoreNpc;
 import me.rukon0621.rknpc.core.util.Components;
 import io.papermc.paper.command.brigadier.BasicCommand;
 import io.papermc.paper.command.brigadier.CommandSourceStack;
@@ -14,6 +16,7 @@ import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import org.bukkit.Bukkit;
+import org.bukkit.Location;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.jspecify.annotations.NonNull;
@@ -51,6 +54,7 @@ public final class NpcCommand implements BasicCommand {
         switch (args[0].toLowerCase(Locale.ROOT)) {
             case "create" -> create(sender, args);
             case "remove" -> remove(sender, args);
+            case "info" -> info(sender, args);
             case "moveto" -> moveTo(sender, args);
             case "teleport" -> teleport(sender, args);
             case "visibility" -> visibility(sender, args);
@@ -66,14 +70,14 @@ public final class NpcCommand implements BasicCommand {
     @Override
     public @NonNull Collection<String> suggest(CommandSourceStack source, String[] args) {
         if(args.length == 0) {
-            return List.of("create", "remove", "moveto", "teleport", "visibility", "item", "skin", "look", "name", "reload");
+            return List.of("create", "remove", "info", "moveto", "teleport", "visibility", "item", "skin", "look", "name", "reload");
         }
         if (args.length == 1) {
-            return filter(List.of("create", "remove", "moveto", "teleport", "visibility", "item", "skin", "look", "name", "reload"), args[0]);
+            return filter(List.of("create", "remove", "info", "moveto", "teleport", "visibility", "item", "skin", "look", "name", "reload"), args[0]);
         }
         String sub = args[0].toLowerCase(Locale.ROOT);
-        if ((sub.equals("remove") || sub.equals("moveto") || sub.equals("teleport") || sub.equals("visibility") || sub.equals("item") || sub.equals("skin") || sub.equals("look") || sub.equals("name") || sub.equals("displayname")) && args.length == 2) {
-            return filter(npcIds(), args[1]);
+        if ((sub.equals("remove") || sub.equals("info") || sub.equals("moveto") || sub.equals("teleport") || sub.equals("visibility") || sub.equals("item") || sub.equals("skin") || sub.equals("look") || sub.equals("name") || sub.equals("displayname")) && args.length == 2) {
+            return filter(npcIds(source), args[1]);
         }
         if (sub.equals("visibility") && args.length == 3) {
             return filter(Bukkit.getOnlinePlayers().stream().map(Player::getName).toList(), args[2]);
@@ -85,7 +89,7 @@ public final class NpcCommand implements BasicCommand {
             return filter(List.of("name", "url", "image", "mirror", "download", "copy"), args[2]);
         }
         if (sub.equals("skin") && args.length == 4 && args[2].equalsIgnoreCase("copy")) {
-            return filter(npcIds(), args[3]);
+            return filter(npcIds(source), args[3]);
         }
         if (sub.equals("skin") && args.length == 4 && args[2].equalsIgnoreCase("download")) {
             List<String> values = new ArrayList<>(skinFiles());
@@ -136,6 +140,38 @@ public final class NpcCommand implements BasicCommand {
         }
         boolean removed = npcManager.removeNpc(args[1]);
         send(sender, removed ? "NPC를 삭제했습니다." : "NPC를 찾을 수 없습니다.");
+    }
+
+    private void info(CommandSender sender, String[] args) {
+        if (args.length < 2) {
+            send(sender, "/npc info <npc>");
+            return;
+        }
+        var optional = npcManager.getNpc(args[1]);
+        if (optional.isEmpty()) {
+            send(sender, "NPC를 찾을 수 없습니다.");
+            return;
+        }
+        var npc = optional.get();
+        Location location = npc.location();
+        long equipmentCount = Arrays.stream(NpcEquipmentSlot.values())
+                .filter(slot -> npc.equipment(slot).isPresent())
+                .count();
+        sender.sendMessage(prefix().append(Component.text("NPC 정보", NamedTextColor.GOLD, TextDecoration.BOLD)));
+        infoLine(sender, "ID", npc.id());
+        sender.sendMessage(Component.text("  표시 이름: ", NamedTextColor.GRAY).append(npc.displayName()));
+        infoLine(sender, "월드", location.getWorld() == null ? "unknown" : location.getWorld().getName());
+        infoLine(sender, "위치", "%.2f, %.2f, %.2f (yaw %.1f, pitch %.1f)".formatted(
+                location.getX(),
+                location.getY(),
+                location.getZ(),
+                location.getYaw(),
+                location.getPitch()
+        ));
+        infoLine(sender, "스킨", npc.skin().type().name() + (npc.skin().value().isBlank() ? "" : " / " + npc.skin().value()));
+        infoLine(sender, "Look", npc.lookMode().name());
+        infoLine(sender, "보는 플레이어", npc.visiblePlayerIds().size() + "명");
+        infoLine(sender, "장비", equipmentCount + "개 슬롯 사용 중");
     }
 
     private void moveTo(CommandSender sender, String[] args) {
@@ -386,6 +422,7 @@ public final class NpcCommand implements BasicCommand {
         sender.sendMessage(prefix().append(Component.text("명령어 목록", NamedTextColor.GOLD, TextDecoration.BOLD)));
         helpLine(sender, "/npc create <id> [name]", "현재 위치에 NPC를 생성합니다. name은 MiniMessage/색상 코드를 지원합니다.");
         helpLine(sender, "/npc remove <id>", "NPC를 삭제하고 모든 플레이어에게 제거 패킷을 보냅니다.");
+        helpLine(sender, "/npc info <npc>", "NPC의 위치, 스킨, 회전 모드, 표시 상태 등 간단한 정보를 확인합니다.");
         helpLine(sender, "/npc moveto <npc>", "NPC를 현재 플레이어 위치와 방향으로 이동합니다.");
         helpLine(sender, "/npc teleport <npc>", "플레이어를 해당 NPC 위치로 이동시킵니다.");
         helpLine(sender, "/npc visibility <id> <player> <show|hide|auto>", "특정 플레이어에게만 표시 상태를 강제하거나 자동 거리 판정으로 되돌립니다.");
@@ -424,6 +461,11 @@ public final class NpcCommand implements BasicCommand {
                 .append(Component.text(description, NamedTextColor.GRAY)));
     }
 
+    private void infoLine(CommandSender sender, String label, String value) {
+        sender.sendMessage(Component.text("  " + label + ": ", NamedTextColor.GRAY)
+                .append(Component.text(value, NamedTextColor.WHITE)));
+    }
+
     private Component confirmButton(String label, String command) {
         return Component.text(label, NamedTextColor.GREEN, TextDecoration.BOLD)
                 .clickEvent(ClickEvent.runCommand(command));
@@ -445,8 +487,33 @@ public final class NpcCommand implements BasicCommand {
         return result;
     }
 
-    private List<String> npcIds() {
-        return npcManager.getCoreNpcs().stream().map(npc -> npc.id()).toList();
+    private List<String> npcIds(CommandSourceStack source) {
+        List<String> ids = new ArrayList<>(npcManager.getCoreNpcs().stream().map(CoreNpc::id).toList());
+        if (source.getSender() instanceof Player player) {
+            nearestNpcId(player).ifPresent(id -> {
+                ids.removeIf(value -> value.equalsIgnoreCase(id));
+                ids.add(0, id);
+            });
+        }
+        return ids;
+    }
+
+    private java.util.Optional<String> nearestNpcId(Player player) {
+        Location playerLocation = player.getLocation();
+        String bestId = null;
+        double bestScore = Double.MAX_VALUE;
+        for (var npc : npcManager.getCoreNpcs()) {
+            Location location = npc.location();
+            if (location.getWorld() == null || !location.getWorld().equals(playerLocation.getWorld())) {
+                continue;
+            }
+            double distanceSquared = location.distanceSquared(playerLocation);
+            if (distanceSquared < bestScore) {
+                bestScore = distanceSquared;
+                bestId = npc.id();
+            }
+        }
+        return java.util.Optional.ofNullable(bestId);
     }
 
     private List<String> skinFiles() {
