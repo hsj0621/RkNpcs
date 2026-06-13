@@ -18,6 +18,7 @@ import me.rukon0621.rknpc.nms.NpcNmsBridge;
 import me.rukon0621.rknpc.nms.packet.PacketNpcFactory;
 import me.rukon0621.rknpc.nms.packet.interact.PacketNpcInteractionAction;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -332,7 +333,8 @@ public final class CoreNpcManager implements NpcManager, Listener, AutoCloseable
         lookAtInterval = plugin.getConfig().getInt("npc-settings.look-at-interval", 5);
         defaultSkinName = plugin.getConfig().getString("npc-settings.default-skin-name", "Steve");
         loadNpcs();
-        sender.sendMessage(Component.text("[RkNpc] reload complete."));
+        sender.sendMessage(Component.text("[RkNpc] ", NamedTextColor.AQUA)
+                .append(Component.text("설정을 다시 불러왔습니다.", NamedTextColor.WHITE)));
     }
 
     public String nextId() {

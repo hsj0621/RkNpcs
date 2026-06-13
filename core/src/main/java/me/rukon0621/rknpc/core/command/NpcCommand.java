@@ -11,6 +11,8 @@ import io.papermc.paper.command.brigadier.BasicCommand;
 import io.papermc.paper.command.brigadier.CommandSourceStack;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.event.ClickEvent;
+import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.format.TextDecoration;
 import org.bukkit.Bukkit;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
@@ -32,6 +34,7 @@ public final class NpcCommand implements BasicCommand {
 
     private final CoreNpcManager npcManager;
     private final Map<String, PendingSkinDownload> pendingSkinDownloads = new ConcurrentHashMap<>();
+    private final Map<String, PendingUrlSkin> pendingUrlSkins = new ConcurrentHashMap<>();
 
     public NpcCommand(CoreNpcManager npcManager) {
         this.npcManager = npcManager;
@@ -225,6 +228,14 @@ public final class NpcCommand implements BasicCommand {
             skinDownloadCancel(sender, args);
             return;
         }
+        if (args[2].equalsIgnoreCase("url-confirm")) {
+            skinUrlConfirm(sender, args);
+            return;
+        }
+        if (args[2].equalsIgnoreCase("url-cancel")) {
+            skinUrlCancel(sender, args);
+            return;
+        }
         if (args[2].equalsIgnoreCase("download")) {
             skinDownload(sender, args);
             return;
@@ -245,8 +256,43 @@ public final class NpcCommand implements BasicCommand {
             skinHelp(sender);
             return;
         }
+        if (type == NpcSkinType.URL) {
+            requestUrlSkinConfirm(sender, args[1], value);
+            return;
+        }
         npcManager.setSkin(args[1], new NpcSkin(type, value));
         send(sender, "NPC 스킨을 변경했습니다.");
+    }
+
+    private void requestUrlSkinConfirm(CommandSender sender, String npcId, String url) {
+        String token = UUID.randomUUID().toString();
+        pendingUrlSkins.put(token, new PendingUrlSkin(npcId, url));
+        sender.sendMessage(prefix()
+                .append(Component.text("url 방식은 권장되지 않으며 download/image 방식을 권장합니다. 정말 사용하시겠습니까? ", NamedTextColor.YELLOW))
+                .append(confirmButton("[예]", "/npc skin " + npcId + " url-confirm " + token))
+                .append(Component.text(" "))
+                .append(cancelButton("[아니오]", "/npc skin " + npcId + " url-cancel " + token)));
+    }
+
+    private void skinUrlConfirm(CommandSender sender, String[] args) {
+        if (args.length < 4) {
+            skinHelp(sender);
+            return;
+        }
+        PendingUrlSkin pending = pendingUrlSkins.remove(args[3]);
+        if (pending == null || !pending.npcId().equalsIgnoreCase(args[1])) {
+            send(sender, "만료되었거나 올바르지 않은 URL 스킨 확인입니다.");
+            return;
+        }
+        npcManager.setSkin(pending.npcId(), new NpcSkin(NpcSkinType.URL, pending.url()));
+        send(sender, "NPC URL 스킨을 변경했습니다.");
+    }
+
+    private void skinUrlCancel(CommandSender sender, String[] args) {
+        if (args.length >= 4) {
+            pendingUrlSkins.remove(args[3]);
+        }
+        send(sender, "URL 스킨 적용을 취소했습니다.");
     }
 
     private void skinDownload(CommandSender sender, String[] args) {
@@ -258,10 +304,11 @@ public final class NpcCommand implements BasicCommand {
         if (npcManager.skinFileExists(args[3])) {
             String token = UUID.randomUUID().toString();
             pendingSkinDownloads.put(token, new PendingSkinDownload(args[1], args[3], url));
-            sender.sendMessage(Component.text("<gold>이미 같은 이름의 스킨 파일이 있습니다. 덮어쓸까요? ")
-                    .append(Component.text("<green>[예]").clickEvent(ClickEvent.runCommand("/npc skin " + args[1] + " download-confirm " + token)))
+            sender.sendMessage(prefix()
+                    .append(Component.text("이미 같은 이름의 스킨 파일이 있습니다. 덮어쓸까요? ", NamedTextColor.YELLOW))
+                    .append(confirmButton("[예]", "/npc skin " + args[1] + " download-confirm " + token))
                     .append(Component.text(" "))
-                    .append(Component.text("<red>[아니오]").clickEvent(ClickEvent.runCommand("/npc skin " + args[1] + " download-cancel " + token))));
+                    .append(cancelButton("[아니오]", "/npc skin " + args[1] + " download-cancel " + token)));
             return;
         }
         startSkinDownload(sender, args[1], args[3], url, false);
@@ -359,28 +406,55 @@ public final class NpcCommand implements BasicCommand {
     }
 
     private void help(CommandSender sender) {
-        send(sender, "/npc create <id> [name]");
-        send(sender, "/npc remove <id>");
-        send(sender, "/npc moveto <npc>");
-        send(sender, "/npc teleport <npc>");
-        send(sender, "/npc visibility <id> <player> <show|hide|auto>");
-        send(sender, "/npc item <id> <hand|offhand>");
-        send(sender, "/npc skin <id> <name|url|image|mirror> <value>");
-        send(sender, "/npc skin <npc> download <파일이름.png> <링크>");
-        send(sender, "/npc skin <npc> copy <sourcenpc>");
-        send(sender, "/npc look <id> <target|off>");
-        send(sender, "/npc name <id> <name>");
-        send(sender, "/npc reload");
+        sender.sendMessage(prefix().append(Component.text("명령어 목록", NamedTextColor.GOLD, TextDecoration.BOLD)));
+        helpLine(sender, "/npc create <id> [name]", "현재 위치에 NPC를 생성합니다. name은 MiniMessage/색상 코드를 지원합니다.");
+        helpLine(sender, "/npc remove <id>", "NPC를 삭제하고 모든 플레이어에게 제거 패킷을 보냅니다.");
+        helpLine(sender, "/npc moveto <npc>", "NPC를 현재 플레이어 위치와 방향으로 이동합니다.");
+        helpLine(sender, "/npc teleport <npc>", "플레이어를 해당 NPC 위치로 이동시킵니다.");
+        helpLine(sender, "/npc visibility <id> <player> <show|hide|auto>", "특정 플레이어에게만 표시 상태를 강제하거나 자동 거리 판정으로 되돌립니다.");
+        helpLine(sender, "/npc item <id> <hand|offhand|helmet|chestplate|leggings|boots>", "손에 든 아이템을 NPC 장비로 표시합니다.");
+        helpLine(sender, "/npc skin <id> <name|image|mirror> <value>", "닉네임, 로컬 이미지, 플레이어 미러 스킨을 적용합니다.");
+        helpLine(sender, "/npc skin <id> url <링크>", "URL 스킨을 적용합니다. 권장되지 않아 확인 후 진행됩니다.");
+        helpLine(sender, "/npc skin <npc> download <파일이름.png> <링크>", "이미지를 skins 폴더에 다운로드한 뒤 자동 적용합니다.");
+        helpLine(sender, "/npc skin <npc> copy <sourcenpc>", "다른 NPC의 스킨 설정을 복사해 적용합니다.");
+        helpLine(sender, "/npc look <id> <target|off>", "가까운 플레이어를 바라보는 추적 회전을 켜거나 끕니다.");
+        helpLine(sender, "/npc name <id> <name>", "NPC 표시 이름을 변경합니다. MiniMessage를 지원합니다.");
+        helpLine(sender, "/npc reload", "config.yml과 npcs.yml을 다시 불러옵니다.");
     }
 
     private void skinHelp(CommandSender sender) {
-        send(sender, "/npc skin <id> <name|url|image|mirror> <value>");
-        send(sender, "/npc skin <npc> download <파일이름.png> <링크>");
-        send(sender, "/npc skin <npc> copy <sourcenpc>");
+        sender.sendMessage(prefix().append(Component.text("스킨 명령어", NamedTextColor.GOLD, TextDecoration.BOLD)));
+        helpLine(sender, "/npc skin <id> name <마인크래프트닉네임>", "해당 닉네임의 Mojang 스킨을 적용합니다.");
+        helpLine(sender, "/npc skin <id> image <파일이름.png>", "plugins/RkNpc/skins 폴더의 PNG를 MineSkin 최초 1회 변환 후 캐시해서 적용합니다.");
+        helpLine(sender, "/npc skin <id> mirror", "보는 플레이어 자신의 스킨으로 보이게 합니다.");
+        helpLine(sender, "/npc skin <id> url <링크>", "외부 URL 이미지를 적용합니다. 권장되지 않아 확인 후 진행됩니다.");
+        helpLine(sender, "/npc skin <id> download <파일이름.png> <링크>", "이미지를 다운로드하고 자동으로 image 스킨으로 적용합니다.");
+        helpLine(sender, "/npc skin <id> copy <원본NPC>", "원본 NPC의 스킨 타입과 값을 복사합니다.");
     }
 
     private void send(CommandSender sender, String message) {
-        sender.sendMessage(Component.text(message));
+        sender.sendMessage(prefix().append(Component.text(message, NamedTextColor.WHITE)));
+    }
+
+    private Component prefix() {
+        return Component.text("[RkNpc] ", NamedTextColor.AQUA);
+    }
+
+    private void helpLine(CommandSender sender, String command, String description) {
+        sender.sendMessage(Component.text("  ")
+                .append(Component.text(command, NamedTextColor.YELLOW))
+                .append(Component.text(" - ", NamedTextColor.DARK_GRAY))
+                .append(Component.text(description, NamedTextColor.GRAY)));
+    }
+
+    private Component confirmButton(String label, String command) {
+        return Component.text(label, NamedTextColor.GREEN, TextDecoration.BOLD)
+                .clickEvent(ClickEvent.runCommand(command));
+    }
+
+    private Component cancelButton(String label, String command) {
+        return Component.text(label, NamedTextColor.RED, TextDecoration.BOLD)
+                .clickEvent(ClickEvent.runCommand(command));
     }
 
     private List<String> filter(List<String> values, String prefix) {
@@ -411,5 +485,8 @@ public final class NpcCommand implements BasicCommand {
     }
 
     private record PendingSkinDownload(String npcId, String fileName, String url) {
+    }
+
+    private record PendingUrlSkin(String npcId, String url) {
     }
 }
