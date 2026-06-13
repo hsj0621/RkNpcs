@@ -258,10 +258,10 @@ public final class NpcCommand implements BasicCommand {
         if (npcManager.skinFileExists(args[3])) {
             String token = UUID.randomUUID().toString();
             pendingSkinDownloads.put(token, new PendingSkinDownload(args[1], args[3], url));
-            sender.sendMessage(Component.text("이미 같은 이름의 스킨 파일이 있습니다. 덮어쓸까요? ")
-                    .append(Component.text("[예]").clickEvent(ClickEvent.runCommand("/npc skin " + args[1] + " download-confirm " + token)))
+            sender.sendMessage(Component.text("<gold>이미 같은 이름의 스킨 파일이 있습니다. 덮어쓸까요? ")
+                    .append(Component.text("<green>[예]").clickEvent(ClickEvent.runCommand("/npc skin " + args[1] + " download-confirm " + token)))
                     .append(Component.text(" "))
-                    .append(Component.text("[아니오]").clickEvent(ClickEvent.runCommand("/npc skin " + args[1] + " download-cancel " + token))));
+                    .append(Component.text("<red>[아니오]").clickEvent(ClickEvent.runCommand("/npc skin " + args[1] + " download-cancel " + token))));
             return;
         }
         startSkinDownload(sender, args[1], args[3], url, false);
