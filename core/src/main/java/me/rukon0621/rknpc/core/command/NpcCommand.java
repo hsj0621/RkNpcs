@@ -10,21 +10,28 @@ import me.rukon0621.rknpc.core.util.Components;
 import io.papermc.paper.command.brigadier.BasicCommand;
 import io.papermc.paper.command.brigadier.CommandSourceStack;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.event.ClickEvent;
 import org.bukkit.Bukkit;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.jspecify.annotations.NonNull;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class NpcCommand implements BasicCommand {
 
     private final CoreNpcManager npcManager;
+    private final Map<String, PendingSkinDownload> pendingSkinDownloads = new ConcurrentHashMap<>();
 
     public NpcCommand(CoreNpcManager npcManager) {
         this.npcManager = npcManager;
@@ -40,6 +47,8 @@ public final class NpcCommand implements BasicCommand {
         switch (args[0].toLowerCase(Locale.ROOT)) {
             case "create" -> create(sender, args);
             case "remove" -> remove(sender, args);
+            case "moveto" -> moveTo(sender, args);
+            case "teleport" -> teleport(sender, args);
             case "visibility" -> visibility(sender, args);
             case "item" -> item(sender, args);
             case "skin" -> skin(sender, args);
@@ -53,13 +62,13 @@ public final class NpcCommand implements BasicCommand {
     @Override
     public @NonNull Collection<String> suggest(CommandSourceStack source, String[] args) {
         if(args.length == 0) {
-            return List.of("create", "remove", "visibility", "item", "skin", "look", "name", "reload");
+            return List.of("create", "remove", "moveto", "teleport", "visibility", "item", "skin", "look", "name", "reload");
         }
         if (args.length == 1) {
-            return filter(List.of("create", "remove", "visibility", "item", "skin", "look", "name", "reload"), args[0]);
+            return filter(List.of("create", "remove", "moveto", "teleport", "visibility", "item", "skin", "look", "name", "reload"), args[0]);
         }
         String sub = args[0].toLowerCase(Locale.ROOT);
-        if ((sub.equals("remove") || sub.equals("visibility") || sub.equals("item") || sub.equals("skin") || sub.equals("look") || sub.equals("name") || sub.equals("displayname")) && args.length == 2) {
+        if ((sub.equals("remove") || sub.equals("moveto") || sub.equals("teleport") || sub.equals("visibility") || sub.equals("item") || sub.equals("skin") || sub.equals("look") || sub.equals("name") || sub.equals("displayname")) && args.length == 2) {
             return filter(npcIds(), args[1]);
         }
         if (sub.equals("visibility") && args.length == 3) {
@@ -78,7 +87,12 @@ public final class NpcCommand implements BasicCommand {
             return filter(npcIds(), args[3]);
         }
         if (sub.equals("skin") && args.length == 4 && args[2].equalsIgnoreCase("download")) {
-            return filter(List.of("skin.png"), args[3]);
+            List<String> values = new ArrayList<>(skinFiles());
+            values.add("skin.png");
+            return filter(values, args[3]);
+        }
+        if (sub.equals("skin") && args.length == 4 && args[2].equalsIgnoreCase("image")) {
+            return filter(skinFiles(), args[3]);
         }
         if (sub.equals("skin") && args.length == 5 && args[2].equalsIgnoreCase("download")) {
             return filter(List.of("https://"), args[4]);
@@ -121,6 +135,37 @@ public final class NpcCommand implements BasicCommand {
         }
         boolean removed = npcManager.removeNpc(args[1]);
         send(sender, removed ? "NPC를 삭제했습니다." : "NPC를 찾을 수 없습니다.");
+    }
+
+    private void moveTo(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player player)) {
+            send(sender, "플레이어만 사용할 수 있습니다.");
+            return;
+        }
+        if (args.length < 2) {
+            send(sender, "/npc moveto <npc>");
+            return;
+        }
+        boolean moved = npcManager.moveNpc(args[1], player.getLocation());
+        send(sender, moved ? "NPC를 현재 위치로 이동했습니다." : "NPC를 찾을 수 없습니다.");
+    }
+
+    private void teleport(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player player)) {
+            send(sender, "플레이어만 사용할 수 있습니다.");
+            return;
+        }
+        if (args.length < 2) {
+            send(sender, "/npc teleport <npc>");
+            return;
+        }
+        var npc = npcManager.getNpc(args[1]);
+        if (npc.isEmpty()) {
+            send(sender, "NPC를 찾을 수 없습니다.");
+            return;
+        }
+        player.teleportAsync(npc.get().location());
+        send(sender, "NPC 위치로 이동합니다.");
     }
 
     private void visibility(CommandSender sender, String[] args) {
@@ -172,6 +217,14 @@ public final class NpcCommand implements BasicCommand {
             skinHelp(sender);
             return;
         }
+        if (args[2].equalsIgnoreCase("download-confirm")) {
+            skinDownloadConfirm(sender, args);
+            return;
+        }
+        if (args[2].equalsIgnoreCase("download-cancel")) {
+            skinDownloadCancel(sender, args);
+            return;
+        }
         if (args[2].equalsIgnoreCase("download")) {
             skinDownload(sender, args);
             return;
@@ -202,13 +255,47 @@ public final class NpcCommand implements BasicCommand {
             return;
         }
         String url = String.join(" ", Arrays.copyOfRange(args, 4, args.length));
+        if (npcManager.skinFileExists(args[3])) {
+            String token = UUID.randomUUID().toString();
+            pendingSkinDownloads.put(token, new PendingSkinDownload(args[1], args[3], url));
+            sender.sendMessage(Component.text("이미 같은 이름의 스킨 파일이 있습니다. 덮어쓸까요? ")
+                    .append(Component.text("[예]").clickEvent(ClickEvent.runCommand("/npc skin " + args[1] + " download-confirm " + token)))
+                    .append(Component.text(" "))
+                    .append(Component.text("[아니오]").clickEvent(ClickEvent.runCommand("/npc skin " + args[1] + " download-cancel " + token))));
+            return;
+        }
+        startSkinDownload(sender, args[1], args[3], url, false);
+    }
+
+    private void skinDownloadConfirm(CommandSender sender, String[] args) {
+        if (args.length < 4) {
+            skinHelp(sender);
+            return;
+        }
+        PendingSkinDownload pending = pendingSkinDownloads.remove(args[3]);
+        if (pending == null || !pending.npcId().equalsIgnoreCase(args[1])) {
+            send(sender, "만료되었거나 올바르지 않은 다운로드 확인입니다.");
+            return;
+        }
+        startSkinDownload(sender, pending.npcId(), pending.fileName(), pending.url(), true);
+    }
+
+    private void skinDownloadCancel(CommandSender sender, String[] args) {
+        if (args.length >= 4) {
+            pendingSkinDownloads.remove(args[3]);
+        }
+        send(sender, "스킨 다운로드를 취소했습니다.");
+    }
+
+    private void startSkinDownload(CommandSender sender, String npcId, String fileName, String url, boolean overwrite) {
         send(sender, "스킨 이미지를 다운로드합니다.");
-        npcManager.downloadAndApplySkin(args[1], args[3], url).thenAccept(result ->
+        npcManager.downloadAndApplySkin(npcId, fileName, url, overwrite).thenAccept(result ->
                 npcManager.runGlobal(() -> send(sender, switch (result) {
                     case SUCCESS -> "스킨 이미지를 다운로드하고 NPC에 적용했습니다.";
                     case NPC_NOT_FOUND -> "NPC를 찾을 수 없습니다.";
                     case INVALID_FILE_NAME -> "파일 이름은 하위 경로 없이 .png로 끝나야 합니다.";
                     case INVALID_URL -> "올바른 http/https 링크가 아닙니다.";
+                    case FILE_EXISTS -> "이미 같은 이름의 스킨 파일이 있습니다.";
                     case DOWNLOAD_FAILED -> "스킨 이미지 다운로드에 실패했습니다.";
                     case WRITE_FAILED -> "스킨 이미지 파일 저장에 실패했습니다.";
                 }))
@@ -274,6 +361,8 @@ public final class NpcCommand implements BasicCommand {
     private void help(CommandSender sender) {
         send(sender, "/npc create <id> [name]");
         send(sender, "/npc remove <id>");
+        send(sender, "/npc moveto <npc>");
+        send(sender, "/npc teleport <npc>");
         send(sender, "/npc visibility <id> <player> <show|hide|auto>");
         send(sender, "/npc item <id> <hand|offhand>");
         send(sender, "/npc skin <id> <name|url|image|mirror> <value>");
@@ -307,5 +396,20 @@ public final class NpcCommand implements BasicCommand {
 
     private List<String> npcIds() {
         return npcManager.getCoreNpcs().stream().map(npc -> npc.id()).toList();
+    }
+
+    private List<String> skinFiles() {
+        try (var stream = Files.list(npcManager.pluginFolder().resolve("skins"))) {
+            return stream
+                    .filter(Files::isRegularFile)
+                    .map(path -> path.getFileName().toString())
+                    .filter(name -> name.toLowerCase(Locale.ROOT).endsWith(".png"))
+                    .toList();
+        } catch (IOException e) {
+            return List.of();
+        }
+    }
+
+    private record PendingSkinDownload(String npcId, String fileName, String url) {
     }
 }

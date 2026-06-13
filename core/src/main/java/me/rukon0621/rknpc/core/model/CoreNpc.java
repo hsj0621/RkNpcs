@@ -28,7 +28,7 @@ public final class CoreNpc implements Npc {
     private final String id;
     @Setter
     private volatile Component displayName;
-    private final Location location;
+    private volatile Location location;
     private final Map<NpcEquipmentSlot, ItemStack> equipment = new EnumMap<>(NpcEquipmentSlot.class);
     private final Map<UUID, VisibilityOverride> visibilityOverrides = new ConcurrentHashMap<>();
     private final PacketNpcVisibilityController visibilityController;
@@ -73,6 +73,10 @@ public final class CoreNpc implements Npc {
         packetNpc = packetNpc == null
                 ? packetNpcFactory.create(displayName, location, equipment, textures)
                 : packetNpcFactory.rebuild(packetNpc, displayName, location, equipment, textures);
+    }
+
+    public void moveTo(Location location) {
+        this.location = location.clone();
     }
 
     public void setSkin(NpcSkin skin) {

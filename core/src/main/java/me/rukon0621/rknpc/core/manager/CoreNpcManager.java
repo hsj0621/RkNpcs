@@ -229,12 +229,39 @@ public final class CoreNpcManager implements NpcManager, Listener, AutoCloseable
         saveNpcs();
     }
 
+    public boolean moveNpc(String id, Location location) {
+        CoreNpc npc = npcs.get(normalize(id));
+        if (npc == null) {
+            return false;
+        }
+        hideVisibleViewers(npc);
+        npc.moveTo(location);
+        npc.rebuildPacket(npc.packetNpc().textures());
+        refreshVisibility();
+        saveNpcs();
+        return true;
+    }
+
+    public boolean skinFileExists(String fileName) {
+        if (!isSafePngFileName(fileName)) {
+            return false;
+        }
+        return Files.isRegularFile(plugin.getDataFolder().toPath().resolve("skins").resolve(fileName));
+    }
+
     public CompletableFuture<SkinDownloadResult> downloadAndApplySkin(String id, String fileName, String url) {
+        return downloadAndApplySkin(id, fileName, url, false);
+    }
+
+    public CompletableFuture<SkinDownloadResult> downloadAndApplySkin(String id, String fileName, String url, boolean overwrite) {
         if (!npcs.containsKey(normalize(id))) {
             return CompletableFuture.completedFuture(SkinDownloadResult.NPC_NOT_FOUND);
         }
         if (!isSafePngFileName(fileName)) {
             return CompletableFuture.completedFuture(SkinDownloadResult.INVALID_FILE_NAME);
+        }
+        if (!overwrite && skinFileExists(fileName)) {
+            return CompletableFuture.completedFuture(SkinDownloadResult.FILE_EXISTS);
         }
         URI uri;
         try {
@@ -322,6 +349,10 @@ public final class CoreNpcManager implements NpcManager, Listener, AutoCloseable
 
     public void runGlobal(Runnable task) {
         Bukkit.getGlobalRegionScheduler().execute(plugin, task);
+    }
+
+    public Path pluginFolder() {
+        return plugin.getDataFolder().toPath();
     }
 
     @EventHandler
@@ -579,6 +610,7 @@ public final class CoreNpcManager implements NpcManager, Listener, AutoCloseable
         NPC_NOT_FOUND,
         INVALID_FILE_NAME,
         INVALID_URL,
+        FILE_EXISTS,
         DOWNLOAD_FAILED,
         WRITE_FAILED
     }
