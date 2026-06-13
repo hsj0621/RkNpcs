@@ -1,10 +1,10 @@
 package me.rukon0621.rknpc.core.command;
 
 import me.rukon0621.rknpc.api.npc.NpcCreateRequest;
-import me.rukon0621.rknpc.api.npc.NpcEquipmentSlot;
 import me.rukon0621.rknpc.api.npc.NpcLookMode;
 import me.rukon0621.rknpc.api.npc.NpcSkin;
 import me.rukon0621.rknpc.api.npc.NpcSkinType;
+import me.rukon0621.rknpc.core.gui.NpcItemGui;
 import me.rukon0621.rknpc.core.manager.CoreNpcManager;
 import me.rukon0621.rknpc.core.util.Components;
 import io.papermc.paper.command.brigadier.BasicCommand;
@@ -16,7 +16,6 @@ import net.kyori.adventure.text.format.TextDecoration;
 import org.bukkit.Bukkit;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
-import org.bukkit.inventory.ItemStack;
 import org.jspecify.annotations.NonNull;
 
 import java.io.IOException;
@@ -33,11 +32,13 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class NpcCommand implements BasicCommand {
 
     private final CoreNpcManager npcManager;
+    private final NpcItemGui itemGui;
     private final Map<String, PendingSkinDownload> pendingSkinDownloads = new ConcurrentHashMap<>();
     private final Map<String, PendingUrlSkin> pendingUrlSkins = new ConcurrentHashMap<>();
 
-    public NpcCommand(CoreNpcManager npcManager) {
+    public NpcCommand(CoreNpcManager npcManager, NpcItemGui itemGui) {
         this.npcManager = npcManager;
+        this.itemGui = itemGui;
     }
 
     @Override
@@ -79,9 +80,6 @@ public final class NpcCommand implements BasicCommand {
         }
         if (sub.equals("visibility") && args.length == 4) {
             return filter(List.of("show", "hide", "auto"), args[3]);
-        }
-        if (sub.equals("item") && args.length == 3) {
-            return filter(List.of("hand", "offhand", "helmet", "chestplate", "leggings", "boots"), args[2]);
         }
         if (sub.equals("skin") && args.length == 3) {
             return filter(List.of("name", "url", "image", "mirror", "download", "copy"), args[2]);
@@ -198,21 +196,12 @@ public final class NpcCommand implements BasicCommand {
             send(sender, "플레이어만 사용할 수 있습니다.");
             return;
         }
-        if (args.length < 3) {
-            send(sender, "/npc item <id> <hand|offhand>");
+        if (args.length < 2) {
+            send(sender, "/npc item <id>");
             return;
         }
-        NpcEquipmentSlot slot = parseSlot(args[2]);
-        if (slot == null) {
-            send(sender, "알 수 없는 장비 슬롯입니다.");
-            return;
-        }
-        ItemStack itemStack = switch (slot) {
-            case OFF_HAND -> player.getInventory().getItemInOffHand();
-            default -> player.getInventory().getItemInMainHand();
-        };
-        npcManager.setEquipment(args[1], slot, itemStack);
-        send(sender, "NPC 장비를 변경했습니다.");
+        boolean opened = itemGui.open(player, args[1]);
+        send(sender, opened ? "NPC 장비 GUI를 열었습니다." : "NPC를 찾을 수 없습니다.");
     }
 
     private void skin(CommandSender sender, String[] args) {
@@ -393,18 +382,6 @@ public final class NpcCommand implements BasicCommand {
         send(sender, "NPC displayName을 변경했습니다.");
     }
 
-    private NpcEquipmentSlot parseSlot(String input) {
-        return switch (input.toLowerCase(Locale.ROOT)) {
-            case "hand" -> NpcEquipmentSlot.HAND;
-            case "offhand", "off_hand" -> NpcEquipmentSlot.OFF_HAND;
-            case "helmet" -> NpcEquipmentSlot.HELMET;
-            case "chestplate" -> NpcEquipmentSlot.CHESTPLATE;
-            case "leggings" -> NpcEquipmentSlot.LEGGINGS;
-            case "boots" -> NpcEquipmentSlot.BOOTS;
-            default -> null;
-        };
-    }
-
     private void help(CommandSender sender) {
         sender.sendMessage(prefix().append(Component.text("명령어 목록", NamedTextColor.GOLD, TextDecoration.BOLD)));
         helpLine(sender, "/npc create <id> [name]", "현재 위치에 NPC를 생성합니다. name은 MiniMessage/색상 코드를 지원합니다.");
@@ -412,7 +389,7 @@ public final class NpcCommand implements BasicCommand {
         helpLine(sender, "/npc moveto <npc>", "NPC를 현재 플레이어 위치와 방향으로 이동합니다.");
         helpLine(sender, "/npc teleport <npc>", "플레이어를 해당 NPC 위치로 이동시킵니다.");
         helpLine(sender, "/npc visibility <id> <player> <show|hide|auto>", "특정 플레이어에게만 표시 상태를 강제하거나 자동 거리 판정으로 되돌립니다.");
-        helpLine(sender, "/npc item <id> <hand|offhand|helmet|chestplate|leggings|boots>", "손에 든 아이템을 NPC 장비로 표시합니다.");
+        helpLine(sender, "/npc item <id>", "NPC 장비 GUI를 열어 손/방어구 아이템을 편하게 편집합니다.");
         helpLine(sender, "/npc skin <id> <name|image|mirror> <value>", "닉네임, 로컬 이미지, 플레이어 미러 스킨을 적용합니다.");
         helpLine(sender, "/npc skin <id> url <링크>", "URL 스킨을 적용합니다. 권장되지 않아 확인 후 진행됩니다.");
         helpLine(sender, "/npc skin <npc> download <파일이름.png> <링크>", "이미지를 skins 폴더에 다운로드한 뒤 자동 적용합니다.");
