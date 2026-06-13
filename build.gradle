@@ -1,0 +1,59 @@
+plugins {
+    id 'java'
+    id 'io.papermc.paperweight.userdev' version '2.0.0-beta.21' apply false
+    id("com.gradleup.shadow") version "9.3.1" // Use the latest version
+}
+
+shadowJar {
+    archiveBaseName.set("RkNpcs")
+    archiveClassifier.set('') // 파일명 뒤에 -all 붙는 것 방지
+    archiveVersion.set('')
+//    destinationDirectory.set(file("C:/updatedPlugins"))
+    destinationDirectory.set(file("Z:/rukondev/plugins"))
+}
+
+def targetJavaVersion = 21
+java {
+    def javaVersion = JavaVersion.toVersion(targetJavaVersion)
+    sourceCompatibility = javaVersion
+    targetCompatibility = javaVersion
+    if (JavaVersion.current() < javaVersion) {
+        toolchain.languageVersion = JavaLanguageVersion.of(targetJavaVersion)
+    }
+}
+
+
+dependencies {
+    implementation project(":core")
+    implementation project(":api")
+    implementation project(":nms")
+}
+
+allprojects {
+    group = 'me.rukon0621.rknpc'
+    version = '1.0-SNAPSHOT'
+
+    apply plugin: 'java'
+
+    dependencies {
+        compileOnly 'org.jetbrains:annotations:24.0.1'
+        compileOnly("org.projectlombok:lombok:1.18.30")
+        annotationProcessor('org.projectlombok:lombok:1.18.30')
+    }
+}
+
+subprojects {
+    apply plugin: 'java-library'
+
+    java {
+        toolchain {
+            languageVersion = JavaLanguageVersion.of(21)
+        }
+        withSourcesJar()
+    }
+
+    tasks.withType(JavaCompile).configureEach {
+        options.encoding = 'UTF-8'
+        options.release = 21
+    }
+}

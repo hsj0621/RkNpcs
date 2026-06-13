@@ -1,0 +1,22 @@
+dependencies {
+    api project(':api')
+    implementation project(':nms')
+    compileOnly 'io.papermc.paper:paper-api:1.21.10-R0.1-SNAPSHOT'
+    compileOnly 'com.mojang:authlib:7.0.61'
+}
+
+tasks.jar {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from project(':api').sourceSets.main.output
+    from project(':nms').sourceSets.main.output
+}
+
+tasks.processResources {
+    filteringCharset = 'UTF-8'
+    filesMatching('paper-plugin.yml') {
+        expand(
+                name: rootProject.name,
+                version: project.version
+        )
+    }
+}

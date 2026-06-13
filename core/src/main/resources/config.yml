@@ -1,0 +1,5 @@
+npc-settings:
+  visible-distance: 32
+  tracking-distance: 7
+  look-at-interval: 5
+  default-skin-name: "Steve"

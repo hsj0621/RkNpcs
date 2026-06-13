@@ -1,0 +1,8 @@
+name: RkNpc
+main: me.rukon0621.rknpc.core.RkNpcPlugin
+version: 1.21.10
+commands:
+  rknpc:
+    description: /rknpc
+    usage: /rknpc
+    permission: rk.npc
