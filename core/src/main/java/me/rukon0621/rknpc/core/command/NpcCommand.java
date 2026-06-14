@@ -19,6 +19,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
+import org.bukkit.util.Vector;
 import org.jspecify.annotations.NonNull;
 
 import java.io.IOException;
@@ -77,7 +78,7 @@ public final class NpcCommand implements BasicCommand {
         }
         String sub = args[0].toLowerCase(Locale.ROOT);
         if ((sub.equals("remove") || sub.equals("info") || sub.equals("moveto") || sub.equals("teleport") || sub.equals("visibility") || sub.equals("item") || sub.equals("skin") || sub.equals("look") || sub.equals("name") || sub.equals("displayname")) && args.length == 2) {
-            return filter(npcIds(source), args[1]);
+            return npcIdSuggestions(source, args[1]);
         }
         if (sub.equals("visibility") && args.length == 3) {
             return filter(Bukkit.getOnlinePlayers().stream().map(Player::getName).toList(), args[2]);
@@ -89,7 +90,7 @@ public final class NpcCommand implements BasicCommand {
             return filter(List.of("name", "url", "image", "mirror", "download", "copy"), args[2]);
         }
         if (sub.equals("skin") && args.length == 4 && args[2].equalsIgnoreCase("copy")) {
-            return filter(npcIds(source), args[3]);
+            return npcIdSuggestions(source, args[3]);
         }
         if (sub.equals("skin") && args.length == 4 && args[2].equalsIgnoreCase("download")) {
             List<String> values = new ArrayList<>(skinFiles());
@@ -487,29 +488,45 @@ public final class NpcCommand implements BasicCommand {
         return result;
     }
 
-    private List<String> npcIds(CommandSourceStack source) {
-        List<String> ids = new ArrayList<>(npcManager.getCoreNpcs().stream().map(CoreNpc::id).toList());
+    private List<String> npcIdSuggestions(CommandSourceStack source, String prefix) {
         if (source.getSender() instanceof Player player) {
-            nearestNpcId(player).ifPresent(id -> {
-                ids.removeIf(value -> value.equalsIgnoreCase(id));
-                ids.add(0, id);
-            });
+            java.util.Optional<String> lookingId = lookingNpcId(player)
+                    .filter(id -> id.toLowerCase(Locale.ROOT).startsWith(prefix.toLowerCase(Locale.ROOT)));
+            if (lookingId.isPresent()) {
+                return List.of(lookingId.get());
+            }
         }
-        return ids;
+        return filter(npcManager.getCoreNpcs().stream().map(CoreNpc::id).toList(), prefix);
     }
 
-    private java.util.Optional<String> nearestNpcId(Player player) {
-        Location playerLocation = player.getLocation();
+    private java.util.Optional<String> lookingNpcId(Player player) {
+        Location eye = player.getEyeLocation();
+        Vector direction = eye.getDirection().normalize();
         String bestId = null;
         double bestScore = Double.MAX_VALUE;
         for (var npc : npcManager.getCoreNpcs()) {
             Location location = npc.location();
-            if (location.getWorld() == null || !location.getWorld().equals(playerLocation.getWorld())) {
+            if (location.getWorld() == null || !location.getWorld().equals(eye.getWorld())) {
                 continue;
             }
-            double distanceSquared = location.distanceSquared(playerLocation);
-            if (distanceSquared < bestScore) {
-                bestScore = distanceSquared;
+            Vector toNpc = location.clone().add(0.0, 1.6, 0.0).toVector().subtract(eye.toVector());
+            double distance = toNpc.length();
+            if (distance <= 0.1 || distance > 6.0) {
+                continue;
+            }
+            double projected = toNpc.dot(direction);
+            if (projected <= 0.0) {
+                continue;
+            }
+            Vector closestPoint = direction.clone().multiply(projected);
+            double perpendicular = toNpc.subtract(closestPoint).length();
+            double allowedWidth = Math.max(1.0, Math.min(2.5, distance * 0.12));
+            if (perpendicular > allowedWidth) {
+                continue;
+            }
+            double score = perpendicular * 8.0 + distance * 0.01;
+            if (score < bestScore) {
+                bestScore = score;
                 bestId = npc.id();
             }
         }
